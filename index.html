@@ -1,0 +1,172 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>Project 2: Flow Matching and Creative Point-Cloud Generation</title><style>
+:root{--bg:#0d1117;--bg2:#151b23;--bg3:#010409;--bd:#30363d;--bd2:#21262d;--fg:#e6edf3;--mut:#9198a1;--link:#4493f8;--acc:#1f6feb;--warn:#d29922}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Helvetica,Arial,sans-serif;
+font-size:16px;line-height:1.5}
+a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+.topbar{background:var(--bg2);border-bottom:1px solid var(--bd);padding:16px 32px;display:flex;align-items:center;gap:10px;font-size:14px}
+.topbar .logo{width:28px;height:28px;border-radius:50%;background:var(--fg);color:var(--bg);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+.topbar b{font-weight:600}.topbar .pill{margin-left:auto;border:1px solid var(--bd);border-radius:2em;padding:0 8px;font-size:12px;font-weight:500;color:var(--mut)}
+.wrap{max-width:1012px;margin:24px auto;padding:0 16px}
+.card{border:1px solid var(--bd);border-radius:6px;background:var(--bg)}
+.card-h{background:var(--bg2);border-bottom:1px solid var(--bd);border-radius:6px 6px 0 0;padding:10px 16px;font-size:14px;font-weight:600;color:var(--fg)}
+.markdown-body{padding:32px 45px 40px}
+h1{font-size:2em;font-weight:600;margin:0 0 4px;padding-bottom:.3em;border-bottom:1px solid var(--bd2)}
+h2{font-size:1.5em;font-weight:600;margin:36px 0 16px;padding-bottom:.3em;border-bottom:1px solid var(--bd2)}
+h3{font-size:1.25em;font-weight:600;margin:28px 0 14px}h4{font-size:1em;font-weight:600;margin:22px 0 8px}
+p,ul,figure{margin:0 0 16px}ul{padding-left:2em}li+li{margin-top:.25em}
+.sub{color:var(--mut);margin-bottom:16px}
+table{border-collapse:collapse;border-spacing:0;display:block;overflow:auto;width:100%;margin:0 0 16px;font-size:14px}
+th,td{border:1px solid var(--bd);padding:6px 13px;text-align:center}
+th{font-weight:600;background:var(--bg2)}tr{background:var(--bg);border-top:1px solid var(--bd2)}tr:nth-child(2n){background:var(--bg2)}
+td:first-child{font-weight:600}
+figure{margin:20px 0;text-align:center}
+figure img{background:#fff;border:1px solid var(--bd);border-radius:6px;padding:6px;max-width:100%}
+img{max-width:100%}
+figcaption{font-size:13px;color:var(--mut);margin-top:6px;text-align:left}
+code{background:rgba(110,118,129,.4);padding:.2em .4em;border-radius:6px;font-size:85%}
+.box{border-left:.25em solid var(--acc);padding:4px 16px;margin:0 0 16px;background:rgba(31,111,235,.08);border-radius:0 6px 6px 0}
+.eq{text-align:center;font-family:"Cambria Math",Cambria,Georgia,serif;font-size:18px;margin:14px 0;padding:10px;background:var(--bg2);
+border:1px solid var(--bd2);border-radius:6px}
+sub,sup{font-size:75%;line-height:0}
+.foot{color:var(--mut);font-size:12px;text-align:center;margin:16px 0 40px}
+@media (max-width:700px){.markdown-body{padding:20px 16px}}
+@media print{.wrap{max-width:none;margin:0}figure,table,.box{break-inside:avoid}}
+</style></head><body>
+<div class="topbar"><div class="logo">FM</div><span><b>Project 2</b> &nbsp;/&nbsp; Flow Matching</span><span class="pill">Public</span></div>
+<div class="wrap"><div class="card"><div class="card-h">&#9776;&nbsp; README.md</div><div class="markdown-body">
+<h1>Project 2: Flow Matching and Creative Point-Cloud Generation</h1>
+<div class="sub">Learned transport from Gaussian noise to a 2D point cloud, an animated demo, a sampling-cost study, and a reflow experiment.</div>
+
+<div class="box"><b>Summary.</b> A 33,794-parameter MLP trained with the flow-matching loss turns Gaussian noise into a noisy ring (Part 1) and into the
+letters "FM" (Parts 2 and 3). Sampling quality saturates at about 25 to 50 Euler steps; the remaining error is in the learned field and
+the sharp-edged target, not in the integrator. One round of reflow makes the paths almost perfectly straight (length minus chord
+0.187 &rarr; 0.0001) and lets 1 to 2 Euler steps work far better (TV at 1 step 0.96 &rarr; 0.26), but it does not
+improve quality at many steps, and plain extra training of the baseline does better there.</div>
+
+<h2>0. Setup and reproducibility</h2>
+<ul>
+<li><b>Model:</b> MLP, input (x, y, t), 3 hidden layers of width 128 (SiLU), output (v<sub>x</sub>, v<sub>y</sub>); 33,794 parameters. The target endpoint is never an input.</li>
+<li><b>Training:</b> batch 256, Adam, lr 2e-3 with cosine decay to 2e-5, 30,000 steps (ring: 30,000). Fresh Gaussian sources every step; targets drawn from a pool of 500,000 samples; random pairing; t ~ U(0,1).</li>
+<li><b>Seeds:</b> Part 1 seed 0; Parts 2 and 3 seeds [0, 1, 2]. Metrics are mean ± std over seeds.</li>
+<li><b>Device:</b> AMD64 Family 23 Model 113 Stepping 0, AuthenticAMD, 16 logical CPUs, Windows-10-10.0.19045-SP0, AMD64; CPU only, 8 torch threads.</li>
+<li><b>Packages:</b> Python 3.12.10, PyTorch 2.5.1+cu121, NumPy 2.4.2, Matplotlib 3.10.8.</li>
+<li><b>Measured runtimes:</b> ring training 56 s (30,000 steps); letters baseline training 56 s per seed (30,000 steps).
+Sampling times below exclude rendering. Animation rendering is slower than inference.</li>
+<li><b>External material:</b> none. The target is text rendered with the DejaVu Sans Bold font that ships with Matplotlib (a freely redistributable font).</li>
+</ul>
+
+<h2>Part 1: Learn a 2D flow from scratch</h2>
+<h3>Task 1: Source, target and training pairs</h3>
+<p><b>Source:</b> x<sub>0</sub> ~ N(0, I) in 2D. <b>Target:</b> a noisy ring: &theta; ~ U[0, 2&pi;), r ~ N(1.0, 0.07<sup>2</sup>), point = (r cos &theta;, r sin &theta;). The data coordinates therefore lie in about [-1.2, 1.2]<sup>2</sup>, while the source extends to about &plusmn;3.
+Training pairs are made by pairing a source point with a <i>random, independent</i> target point, drawing t ~ U(0,1), and forming</p>
+<div class="eq">x<sub>t</sub> = (1 &minus; t) x<sub>0</sub> + t x<sub>1</sub>, &nbsp;&nbsp; u = x<sub>1</sub> &minus; x<sub>0</sub> &nbsp;&nbsp; (t = 0 is noise, t = 1 is data)</div>
+<figure><img src="figures/fig1.png" style="width:100%" alt="fig1"><figcaption>Interpolated points at t = 0, 0.25, 0.5, 0.75, 1 for 1,500 random pairs (colors = identity of the source point), and 40 pairs drawn as straight segments (circle = x0, square = x1).</figcaption></figure>
+<p><b>Why the velocity is constant along a training path.</b> For a fixed pair, x<sub>t</sub> is a linear function of t, so d x<sub>t</sub>/dt = x<sub>1</sub> &minus; x<sub>0</sub>, which does not depend on t:
+the point moves along a straight line at constant velocity, and the regression target u is the same at every time on that path. I checked this numerically with finite differences along 200 paths: the
+largest deviation from x<sub>1</sub> &minus; x<sub>0</sub> was 2.6e-06 (float32 rounding).</p>
+
+<h3>Task 2: Implement and train the velocity model</h3>
+<p>The network v<sub>&theta;</sub>(x<sub>t</sub>, t) &isin; R<sup>2</sup> takes the current point and time and is trained on L = E&Vert;v<sub>&theta;</sub>(x<sub>t</sub>, t) &minus; (x<sub>1</sub> &minus; x<sub>0</sub>)&Vert;<sup>2</sup>
+(PyTorch, Adam, 30,000 steps, 56 s).</p>
+<figure><img src="figures/fig2.png" style="width:100%" alt="fig2"><figcaption>Left: training loss (log scale). Right: held-out loss at fixed times, with the analytic irreducible loss at t = 0 and t = 1 (red crosses).</figcaption></figure>
+<p><b>What is being predicted.</b> The network sees only (x<sub>t</sub>, t). Many different pairs (x<sub>0</sub>, x<sub>1</sub>) have straight paths through the same point at the same time, and each carries a different u.
+The squared-error minimizer is therefore the <i>conditional mean</i> E[x<sub>1</sub> &minus; x<sub>0</sub> | x<sub>t</sub>, t]: the average velocity of all training paths passing through that point. At generation time there is no endpoint
+to supply, and this averaged velocity field is what moves the samples.</p>
+<p><b>Why the loss does not go to zero.</b> What remains is the variance of u around its conditional mean. It is known exactly at the ends: at t = 0 the point is x<sub>0</sub>, independent of x<sub>1</sub>, so the floor is
+tr Cov(x<sub>1</sub>) = 1.005; at t = 1 the point is x<sub>1</sub> and the floor is E&Vert;x<sub>0</sub>&Vert;<sup>2</sup> = 2.0. Between them the loss stays high: the final training loss is
+1.949, plateauing rather than approaching 0. A flat loss is not a sign of failure; the sample quality below is the real test.</p>
+
+<h3>Task 3: Generate new points with the learned field</h3>
+<p>Forward Euler, z<sub>k+1</sub> = z<sub>k</sub> + &Delta;t v<sub>&theta;</sub>(z<sub>k</sub>, t<sub>k</sub>), with 120 steps, starting from <i>fresh</i> Gaussian samples (no endpoints supplied).
+Generated points vs. independent target samples on a fixed 40&times;40 histogram grid: TV = 0.087, against 0.079 for two independent sets of true target samples,
+so the ring is reproduced to within sampling noise.</p>
+<figure><img src="figures/fig3.png" style="width:100%" alt="fig3"><figcaption>Generated point cloud at several times (colors follow the source point through time).</figcaption></figure>
+<figure><img src="figures/fig4.png" style="width:100%" alt="fig4"><figcaption>Learned velocity field at selected times. Grey dots are target samples. Early on the field points toward the origin region (the data mean); later it points toward the ring.</figcaption></figure>
+<p><b>Learned sampling trajectories are not the straight training paths.</b> Training segments are exactly straight, but they cross each other, and the field is the <i>average</i> over crossing segments; integrating an averaged field produces curved paths.
+Measured on 3,000 trajectories, the mean of (path length &minus; start-to-end distance) is 0.363 (median 0.372), whereas it is exactly 0 for a training path. So straight training paths do not guarantee straight sampling trajectories.</p>
+<figure><img src="figures/fig5.png" style="width:100%" alt="fig5"><figcaption>Left: straight training segments to random targets. Middle: learned sampling trajectories (solid) and their chords (dashed). Right: distribution of path length minus chord.</figcaption></figure>
+
+<h2>Part 2: Create and analyze your own animated demo</h2>
+<h3>Task 1: Creative target</h3>
+<p><b>Target:</b> the text "FM". <b>Sampling rule:</b> the text is rasterized (Pillow, DejaVu Sans Bold) into a 512&times;512 binary mask covering [-1.2, 1.2]<sup>2</sup>, giving 46,735 foreground pixels. A sample is made by choosing a foreground pixel
+uniformly at random and adding uniform jitter inside that pixel, so the samples form a continuous density that is uniform over the letter strokes (pixel size 0.0047 data units). Coordinates are used as they are, with no further scaling. The model, loss and training recipe are the same as in Part 1.</p>
+<figure><img src="figures/fig6.png" style="width:80%" alt="fig6"><figcaption>Binary mask of the target and 6,000 samples from the resulting distribution.</figcaption></figure>
+
+<h3>Task 2: Animate the learned transport</h3>
+<p>The animation shows 3,000 particles integrated with the <i>trained model</i> (120 Euler steps), so each frame is an actual learned trajectory point, not an interpolation along a known straight path. The same particles are tracked through all frames.</p>
+<img src="transport.gif" alt="animation of noise turning into the target" style="width:520px;display:block;margin:10px auto">
+
+<figure><img src="figures/fig7.png" style="width:100%" alt="fig7"><figcaption>Still frames at t = 0, 0.25, 0.5, 0.75, 1. Top: colored by source coordinate. Bottom: colors assigned from the generated endpoint and kept along the path.</figcaption></figure>
+<p><b>How colors are assigned, and whether they are trained.</b> Colors are a visualization attribute only and never enter training or sampling: the network outputs only 2D velocities. In the top row the hue of each particle is the angle of its source point x<sub>0</sub> and its brightness
+decreases with the radius of x<sub>0</sub>; the color is attached to the particle index, so it stays with the particle for the whole trajectory. In the bottom row the color is chosen from the particle's <i>generated endpoint</i> (hue from x, brightness from y) and is then carried backwards along its path.
+The animation zooms in smoothly (axis limits shrink from &plusmn;3.2 to &plusmn;1.35) so that the noise and the letters both fit, which changes the apparent speed of the points.</p>
+
+<h3>Task 3: The sampling trade-off</h3>
+<p>Fixed trained weights and a fixed set of 20,000 held-out Gaussian starts; only the number of Euler steps changes. Network evaluations (NFE) equal the number of steps. Time is the sampling loop for 20,000 points on CPU, excluding any rendering (measured on seed 0).
+Quality is measured against 20,000 <i>independent</i> target samples with distribution-level metrics only:</p>
+<ul><li><b>TV:</b> total-variation distance between normalized histograms on one fixed 40&times;40 grid over [-1.5, 1.5]<sup>2</sup>, with one extra bin that collects every point outside the grid (so escaped points are counted, not dropped).
+Even two independent sets of true target samples have TV &asymp; 0.062 ± 0.002 (the <b>noise floor</b>).</li>
+<li><b>SW1:</b> sliced Wasserstein-1 over 128 fixed random directions (noise floor 0.0043).</li>
+<li><b>Stray fraction:</b> fraction of generated points farther than 0.05 from the letter strokes (true target samples: 0.000). The fraction outside the histogram grid was 0.000 for every step count.</li>
+<li><b>Numerical error:</b> mean distance between the N-step endpoint and the 400-step endpoint of the <i>same</i> model from the <i>same</i> start. This compares a model with itself, so a point-wise comparison is meaningful here.</li></ul>
+<table class=""><thead><tr><th>Euler steps (= NFE)</th><th>time (s)</th><th>TV</th><th>SW1</th><th>stray fraction</th><th>dist. to 400-step result</th></tr></thead><tbody><tr><td>1</td><td>0.009</td><td>0.958 ± 0.003</td><td>0.3702 ± 0.0018</td><td>0.000 ± 0.000</td><td>0.6140 ± 0.0059</td></tr><tr><td>2</td><td>0.013</td><td>0.785 ± 0.004</td><td>0.2287 ± 0.0012</td><td>0.156 ± 0.006</td><td>0.3628 ± 0.0025</td></tr><tr><td>5</td><td>0.037</td><td>0.429 ± 0.001</td><td>0.0895 ± 0.0006</td><td>0.119 ± 0.003</td><td>0.1420 ± 0.0011</td></tr><tr><td>10</td><td>0.081</td><td>0.298 ± 0.002</td><td>0.0455 ± 0.0002</td><td>0.096 ± 0.003</td><td>0.0698 ± 0.0007</td></tr><tr><td>25</td><td>0.200</td><td>0.237 ± 0.002</td><td>0.0202 ± 0.0001</td><td>0.084 ± 0.002</td><td>0.0267 ± 0.0003</td></tr><tr><td>50</td><td>0.403</td><td>0.227 ± 0.004</td><td>0.0136 ± 0.0002</td><td>0.081 ± 0.002</td><td>0.0125 ± 0.0001</td></tr><tr><td>100</td><td>0.796</td><td>0.223 ± 0.004</td><td>0.0113 ± 0.0005</td><td>0.081 ± 0.003</td><td>0.0053 ± 0.0000</td></tr><tr><td>200</td><td>1.723</td><td>0.221 ± 0.005</td><td>0.0106 ± 0.0006</td><td>0.081 ± 0.003</td><td>0.0018 ± 0.0000</td></tr></tbody></table>
+<figure><img src="figures/fig8.png" style="width:100%" alt="fig8"><figcaption>Final point clouds for each step count (same weights, same Gaussian starts, seed 0).</figcaption></figure>
+<figure><img src="figures/fig9.png" style="width:100%" alt="fig9"><figcaption>Quality metrics and sampling time versus step count (red dashed = noise floor from true target samples).</figcaption></figure>
+<p><b>What changes with fewer steps.</b> Time grows linearly with the number of steps (0.009 s for 1 step to 1.72 s for 200). One Euler step from t = 0 moves every point by v<sub>&theta;</sub>(z<sub>0</sub>, 0), which is
+the average velocity toward the data mean, so all samples collapse near one place (TV 0.96). That also explains why the stray fraction is misleading at 1 step: the collapsed blob can happen to sit on a stroke, so TV and SW1 are the metrics to trust there.
+With 2 to 10 steps the cloud grows toward the letters but is blurred; the distance to the converged solution shrinks roughly in proportion to 1/N, as expected for a first-order method.</p>
+<p><b>What does not improve with more steps.</b> From about 25 to 50 steps onward TV levels off near 0.22, well above the noise floor of 0.062, and about 8% of points still lie off the letters, although the distance to the converged
+solution keeps falling to 0.0018. So the remaining error is not numerical: the Euler solution is converging, but to the solution of an imperfect learned field. Plausible sources are the model (a 33,794-parameter MLP and
+limited training must represent sharp stroke edges and the gap between the letters, where a few points lie in between) and the target representation (the pixel mask with jitter has discontinuous edges, so the density to match is itself hard to approximate). I did not separate these two sources
+experimentally, and more steps would not fix either.</p>
+
+<h2>Part 3: Does reflow straighten the paths?</h2>
+<h3>Task 1: Hypothesis and reflow dataset</h3>
+<div class="box"><b>Hypothesis (stated before running).</b> One round of reflow makes the learned trajectories much straighter and improves sample quality at very few Euler steps (1 to 5). It will <i>not</i> improve the final
+distribution quality at many steps, because reflow learns from the baseline's own generated endpoints and so inherits the baseline's errors.</div>
+<p><b>Dataset.</b> I froze the trained baseline and drew 100,000 Gaussian sources. Each was integrated with 200 Euler steps, and I saved each source together with <i>its own</i> endpoint. The pairs were never reshuffled and the target shape was not used directly.
+Generating the dataset took 8.3 s (20,000,000 network evaluations).</p>
+<figure><img src="figures/fig10.png" style="width:100%" alt="fig10"><figcaption>Left: baseline training segments (source to a random target point) cross heavily. Right: reflow training segments (source to its own generated endpoint) do not cross.</figcaption></figure>
+
+<h3>Task 2: Train and compare a reflow model</h3>
+<p>The reflow model has the same architecture, is initialized from the baseline weights, and is trained on straight interpolations between the saved pairs (10,000 steps, lr 5e-4 with cosine decay, 19.1 s). Models are compared on the same held-out Gaussian starts and the same step counts.
+Two <b>compute-matched controls</b> continue training the baseline with the ordinary loss: one for the same number of optimizer steps (10,000), and one for the same wall-clock as reflow training plus dataset generation (14,394 steps).
+Results are mean ± std over 3 seeds ([0, 1, 2]); a seed changes initialization, minibatches and the reflow dataset, but not the target.</p>
+<h4>Distribution quality: TV to independent target samples (noise floor 0.062)</h4>
+<table class=""><thead><tr><th>Euler steps</th><th>baseline</th><th>reflow</th><th>baseline + continued<br>(same #steps)</th><th>baseline + continued<br>(same wall-clock)</th></tr></thead><tbody><tr><td>1</td><td>0.958 ± 0.003</td><td>0.263 ± 0.011</td><td>0.962 ± 0.002</td><td>0.962 ± 0.003</td></tr><tr><td>2</td><td>0.785 ± 0.004</td><td>0.240 ± 0.009</td><td>0.785 ± 0.001</td><td>0.785 ± 0.003</td></tr><tr><td>5</td><td>0.429 ± 0.001</td><td>0.232 ± 0.005</td><td>0.424 ± 0.005</td><td>0.421 ± 0.004</td></tr><tr><td>10</td><td>0.298 ± 0.002</td><td>0.226 ± 0.005</td><td>0.290 ± 0.003</td><td>0.290 ± 0.001</td></tr><tr><td>25</td><td>0.237 ± 0.002</td><td>0.228 ± 0.005</td><td>0.228 ± 0.004</td><td>0.225 ± 0.004</td></tr><tr><td>50</td><td>0.227 ± 0.004</td><td>0.227 ± 0.004</td><td>0.216 ± 0.005</td><td>0.214 ± 0.004</td></tr><tr><td>100</td><td>0.223 ± 0.004</td><td>0.227 ± 0.004</td><td>0.213 ± 0.006</td><td>0.210 ± 0.005</td></tr><tr><td>200</td><td>0.221 ± 0.005</td><td>0.227 ± 0.004</td><td>0.213 ± 0.006</td><td>0.208 ± 0.004</td></tr></tbody></table>
+<h4>Distribution quality: sliced Wasserstein-1 (noise floor 0.0043)</h4>
+<table class=""><thead><tr><th>Euler steps</th><th>baseline</th><th>reflow</th><th>baseline + continued<br>(same #steps)</th><th>baseline + continued<br>(same wall-clock)</th></tr></thead><tbody><tr><td>1</td><td>0.3702 ± 0.0018</td><td>0.0113 ± 0.0007</td><td>0.3708 ± 0.0013</td><td>0.3714 ± 0.0004</td></tr><tr><td>2</td><td>0.2287 ± 0.0012</td><td>0.0108 ± 0.0006</td><td>0.2282 ± 0.0010</td><td>0.2276 ± 0.0004</td></tr><tr><td>5</td><td>0.0895 ± 0.0006</td><td>0.0107 ± 0.0005</td><td>0.0892 ± 0.0007</td><td>0.0897 ± 0.0006</td></tr><tr><td>10</td><td>0.0455 ± 0.0002</td><td>0.0106 ± 0.0005</td><td>0.0449 ± 0.0002</td><td>0.0453 ± 0.0001</td></tr><tr><td>25</td><td>0.0202 ± 0.0001</td><td>0.0106 ± 0.0006</td><td>0.0195 ± 0.0001</td><td>0.0197 ± 0.0002</td></tr><tr><td>50</td><td>0.0136 ± 0.0002</td><td>0.0106 ± 0.0006</td><td>0.0127 ± 0.0002</td><td>0.0128 ± 0.0004</td></tr><tr><td>100</td><td>0.0113 ± 0.0005</td><td>0.0106 ± 0.0006</td><td>0.0103 ± 0.0002</td><td>0.0103 ± 0.0005</td></tr><tr><td>200</td><td>0.0106 ± 0.0006</td><td>0.0106 ± 0.0006</td><td>0.0095 ± 0.0003</td><td>0.0094 ± 0.0005</td></tr></tbody></table>
+<figure><img src="figures/fig12.png" style="width:100%" alt="fig12"><figcaption>Left and middle: quality versus network evaluations for all four models (error bars = std over seeds). Right: path straightness.</figcaption></figure>
+<figure><img src="figures/fig11.png" style="width:100%" alt="fig11"><figcaption>Final clouds, baseline (top) vs reflow (bottom), at few steps (seed 0).</figcaption></figure>
+<h4>Path straightness on a common 200-step Euler grid (5,000 held-out starts)</h4>
+<table class=""><thead><tr><th>model</th><th>mean(length &minus; chord)</th><th>mean(length / chord)</th><th>S = mean &Vert;v &minus; (z<sub>end</sub> &minus; z<sub>start</sub>)&Vert;<sup>2</sup></th></tr></thead><tbody><tr><td>baseline</td><td>0.1874 ± 0.0025</td><td>1.6181 ± 0.0191</td><td>0.3825 ± 0.0038</td></tr><tr><td>reflow</td><td>0.0001 ± 0.0000</td><td>1.0007 ± 0.0002</td><td>0.0002 ± 0.0000</td></tr><tr><td>baseline + continued (same #steps)</td><td>0.1878 ± 0.0008</td><td>1.6254 ± 0.0149</td><td>0.3827 ± 0.0004</td></tr><tr><td>baseline + continued (same wall-clock)</td><td>0.1874 ± 0.0009</td><td>1.6180 ± 0.0045</td><td>0.3828 ± 0.0025</td></tr></tbody></table>
+<figure><img src="figures/fig13.png" style="width:100%" alt="fig13"><figcaption>Learned trajectories from the same 40 starts, baseline (left) vs reflow (right).</figcaption></figure>
+<h4>Cost</h4>
+<table class=""><thead><tr><th>item</th><th>steps / evaluations</th><th>wall time (s), seed 0</th></tr></thead><tbody><tr><td>baseline training</td><td>30,000 optimizer steps</td><td>56.6</td></tr><tr><td>reflow dataset generation</td><td>100,000 &times; 200 network evaluations</td><td>8.3</td></tr><tr><td>reflow training</td><td>10,000 optimizer steps</td><td>19.1</td></tr><tr><td>continued baseline (same steps)</td><td>10,000 optimizer steps</td><td>18.7</td></tr><tr><td>continued baseline (same wall-clock)</td><td>14,394 optimizer steps</td><td>27.4</td></tr></tbody></table>
+<p>Extra cost of reflow: 27.4 s (8.3 s data + 19.1 s training), about 48% of baseline training. This is reported separately from inference cost, which is the same for every model: each Euler step is one forward pass of the same
+network (e.g. 0.081 s vs 0.086 s for 10 steps).</p>
+
+<h3>Task 3: What does the evidence support?</h3>
+<ul>
+<li><b>Straightness: strongly supported.</b> Mean path length minus chord falls from 0.187 to 0.0001 and S from 0.382 to 0.0002. Neither control changes it (0.188 and 0.187), so the straightening is due to reflow and not to extra training.</li>
+<li><b>Few-step sampling: supported.</b> At 1 step, TV improves from 0.96 to 0.26 and SW1 from 0.370 to 0.0113 (the baseline reaches SW1 0.0106 only with 200 steps); the continued-training baselines stay at TV 0.96.
+The advantage in TV shrinks with more steps and is gone by about 50 steps.</li>
+<li><b>Final quality: not improved, as hypothesized.</b> At 200 steps reflow has TV 0.227 versus 0.221 for the baseline (differences of this size are comparable to the seed spread), and the baseline continued with the ordinary loss is better (0.208). Reflow cannot repair the baseline's errors
+because it is trained on the baseline's outputs. The reflow training loss (0.0002) is far below the baseline's (1.31) because the pairing is now deterministic and no longer has irreducible variance; this only means the new regression is easy, not that the samples are closer to the target.</li></ul>
+<p><b>Alternative explanations and limits.</b></p>
+<ul>
+<li>Straighter paths make Euler steps accurate, which explains the few-step gain without any better match to the target; straightness alone does not prove better quality.</li>
+<li>The reflow model was warm-started from the baseline. I did not test reflow from scratch, so some of the effect could depend on this initialization.</li>
+<li>The continued-training controls match cost but use a fresh learning-rate schedule; their improvement at many steps also shows that the 30,000-step baseline was not fully converged, which limits how strongly the high-step comparison can be read.</li>
+<li>One target shape, one reflow round, one architecture, 3 seeds; the seeds share the same target, so they do not show variation across targets. TV and SW1 depend on the grid, sample size and projections; I used the same ones everywhere and report the noise floor.</li>
+<li>Time measurements come from one machine and one seed and include normal timing noise.</li></ul>
+
+<h2>References</h2>
+<ul><li>Lipman et al., <i>Flow Matching for Generative Modeling</i>.</li><li>Liu et al., <i>Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow</i>.</li>
+<li>Lipman et al., <i>Flow Matching Guide and Code</i>.</li></ul>
+<p class="sub">Generative AI tools were used to help write and debug the code; I ran all experiments and take responsibility for the results and analysis.</p>
+</div></div><div class="foot">Project 2 &middot; Flow Matching and Creative Point-Cloud Generation</div></div>
+</body></html>
